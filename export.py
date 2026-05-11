@@ -46,6 +46,7 @@ TensorFlow.js:
 
 import argparse
 import contextlib
+import inspect
 import json
 import os
 import platform
@@ -152,16 +153,21 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
         elif isinstance(model, DetectionModel):
             dynamic['output0'] = {0: 'batch', 1: 'anchors'}  # shape(1,25200,85)
 
+    export_kwargs = {
+        'verbose': False,
+        'opset_version': opset,
+        'do_constant_folding': True,
+        'input_names': ['images'],
+        'output_names': output_names,
+        'dynamic_axes': dynamic or None}
+    if os.environ.get('RKNN_model_hack') == '1' and 'dynamo' in inspect.signature(torch.onnx.export).parameters:
+        export_kwargs['dynamo'] = False
+
     torch.onnx.export(
         model.cpu() if dynamic else model,  # --dynamic only compatible with cpu
         im.cpu() if dynamic else im,
         f,
-        verbose=False,
-        opset_version=opset,
-        do_constant_folding=True,
-        input_names=['images'],
-        output_names=output_names,
-        dynamic_axes=dynamic or None)
+        **export_kwargs)
 
     # Checks
     model_onnx = onnx.load(f)  # load onnx model

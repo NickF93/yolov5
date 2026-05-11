@@ -1000,7 +1000,7 @@ def non_max_suppression(
     return output
 
 
-def strip_optimizer(f='best.pt', s=''):  # from utils.general import *; strip_optimizer()
+def strip_optimizer(f='best.pt', s='', half=True):  # from utils.general import *; strip_optimizer()
     # Strip optimizer from 'f' to finalize training, optionally save as 's'
     x = torch_load_checkpoint(f, map_location=torch.device('cpu'))
     if x.get('ema'):
@@ -1008,12 +1008,16 @@ def strip_optimizer(f='best.pt', s=''):  # from utils.general import *; strip_op
     for k in 'optimizer', 'best_fitness', 'ema', 'updates':  # keys
         x[k] = None
     x['epoch'] = -1
-    x['model'].half()  # to FP16
+    if half:
+        x['model'].half()
+    else:
+        x['model'].float()
     for p in x['model'].parameters():
         p.requires_grad = False
     torch.save(x, s or f)
     mb = os.path.getsize(s or f) / 1E6  # filesize
-    LOGGER.info(f"Optimizer stripped from {f},{f' saved as {s},' if s else ''} {mb:.1f}MB")
+    precision = 'FP16' if half else 'FP32'
+    LOGGER.info(f"Optimizer stripped from {f},{f' saved as {s},' if s else ''} {mb:.1f}MB ({precision})")
 
 
 def print_mutation(keys, results, hyp, save_dir, bucket, prefix=colorstr('evolve: ')):
