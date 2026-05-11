@@ -59,7 +59,8 @@ from utils.loss import ComputeLoss
 from utils.metrics import fitness
 from utils.plots import plot_evolve
 from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, smart_DDP, smart_autocast,
-                               smart_grad_scaler, smart_optimizer, smart_resume, torch_distributed_zero_first)
+                               smart_grad_scaler, smart_optimizer, smart_resume, tensors_to_float32,
+                               torch_distributed_zero_first)
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -304,14 +305,36 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to gs-multiple)
                     imgs = nn.functional.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
+            targets_device = targets.to(device)
+
+            def forward_loss(amp_enabled):
+                with smart_autocast(device.type, enabled=amp_enabled):
+                    pred = model(imgs)  # forward
+                # YOLO loss includes reductions and IoU math that should stay in FP32.
+                return compute_loss(tensors_to_float32(pred), targets_device)  # loss scaled by batch_size
+
             # Forward
-            with smart_autocast(device.type, enabled=amp):
-                pred = model(imgs)  # forward
-                loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
-                if RANK != -1:
-                    loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
-                if opt.quad:
-                    loss *= 4.
+            loss, loss_items = forward_loss(amp)
+            if RANK != -1:
+                loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
+            if opt.quad:
+                loss *= 4.
+
+            if not (torch.isfinite(loss).all() and torch.isfinite(loss_items).all()):
+                if amp:
+                    LOGGER.warning('AMP: non-finite loss detected; clearing accumulated gradients, retrying this batch '
+                                   'in FP32, and disabling AMP')
+                    amp = False
+                    scaler = smart_grad_scaler(device.type, enabled=False)
+                    optimizer.zero_grad()
+                    last_opt_step = ni - 1
+                    loss, loss_items = forward_loss(False)
+                    if RANK != -1:
+                        loss *= WORLD_SIZE
+                    if opt.quad:
+                        loss *= 4.
+                if not (torch.isfinite(loss).all() and torch.isfinite(loss_items).all()):
+                    raise RuntimeError('Non-finite loss detected in FP32 training path')
 
             # Backward
             scaler.scale(loss).backward()
