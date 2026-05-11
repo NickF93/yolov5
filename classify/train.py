@@ -27,7 +27,6 @@ import torch.distributed as dist
 import torch.hub as hub
 import torch.optim.lr_scheduler as lr_scheduler
 import torchvision
-from torch.cuda import amp
 from tqdm import tqdm
 
 FILE = Path(__file__).resolve()
@@ -45,7 +44,8 @@ from utils.general import (DATASETS_DIR, LOGGER, TQDM_BAR_FORMAT, WorkingDirecto
 from utils.loggers import GenericLogger
 from utils.plots import imshow_cls
 from utils.torch_utils import (ModelEMA, model_info, reshape_classifier_output, select_device, smart_DDP,
-                               smart_optimizer, smartCrossEntropyLoss, torch_distributed_zero_first)
+                               smart_autocast, smart_grad_scaler, smart_optimizer, smartCrossEntropyLoss,
+                               torch_distributed_zero_first)
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -161,7 +161,7 @@ def train(opt, device):
     t0 = time.time()
     criterion = smartCrossEntropyLoss(label_smoothing=opt.label_smoothing)  # loss function
     best_fitness = 0.0
-    scaler = amp.GradScaler(enabled=cuda)
+    scaler = smart_grad_scaler(device.type, enabled=cuda)
     val = test_dir.stem  # 'val' or 'test'
     LOGGER.info(f'Image sizes {imgsz} train, {imgsz} test\n'
                 f'Using {nw * WORLD_SIZE} dataloader workers\n'
@@ -180,7 +180,7 @@ def train(opt, device):
             images, labels = images.to(device, non_blocking=True), labels.to(device)
 
             # Forward
-            with amp.autocast(enabled=cuda):  # stability issues when enabled
+            with smart_autocast(device.type, enabled=cuda):  # stability issues when enabled
                 loss = criterion(model(images), labels)
 
             # Backward

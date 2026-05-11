@@ -9,7 +9,7 @@ import platform
 import subprocess
 import time
 import warnings
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from pathlib import Path
 
@@ -33,6 +33,27 @@ except ImportError:
 # Suppress PyTorch warnings
 warnings.filterwarnings('ignore', message='User provided device_type of \'cuda\', but CUDA is not available. Disabling')
 warnings.filterwarnings('ignore', category=UserWarning)
+
+
+def smart_autocast(device_type='cuda', enabled=True):
+    # Uses the modern torch.amp API when available, with fallback for older PyTorch releases.
+    device_type = str(device_type).split(':')[0]
+    if hasattr(torch, 'amp') and hasattr(torch.amp, 'autocast'):
+        return torch.amp.autocast(device_type=device_type, enabled=enabled)
+    if device_type == 'cuda' and hasattr(torch.cuda, 'amp'):
+        return torch.cuda.amp.autocast(enabled=enabled)
+    return nullcontext()
+
+
+def smart_grad_scaler(device_type='cuda', enabled=True):
+    # Uses the modern torch.amp API when available, with fallback for older PyTorch releases.
+    device_type = str(device_type).split(':')[0]
+    if hasattr(torch, 'amp') and hasattr(torch.amp, 'GradScaler'):
+        try:
+            return torch.amp.GradScaler(device_type, enabled=enabled)
+        except TypeError:
+            return torch.amp.GradScaler(enabled=enabled)
+    return torch.cuda.amp.GradScaler(enabled=enabled)
 
 
 def smart_inference_mode(torch_1_9=check_version(torch.__version__, '1.9.0')):
