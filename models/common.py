@@ -24,7 +24,6 @@ import torch
 import torch.nn as nn
 from IPython.display import display
 from PIL import Image
-from torch.cuda import amp
 
 from utils import TryExcept
 from utils.dataloaders import exif_transpose, letterbox
@@ -32,7 +31,7 @@ from utils.general import (LOGGER, ROOT, Profile, check_requirements, check_suff
                            increment_path, is_notebook, make_divisible, non_max_suppression, scale_boxes, xywh2xyxy,
                            xyxy2xywh, yaml_load)
 from utils.plots import Annotator, colors, save_one_box
-from utils.torch_utils import copy_attr, smart_inference_mode
+from utils.torch_utils import copy_attr, smart_autocast, smart_inference_mode
 
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
@@ -729,7 +728,7 @@ class AutoShape(nn.Module):
             p = next(self.model.parameters()) if self.pt else torch.empty(1, device=self.model.device)  # param
             autocast = self.amp and (p.device.type != 'cpu')  # Automatic Mixed Precision (AMP) inference
             if isinstance(ims, torch.Tensor):  # torch
-                with amp.autocast(autocast):
+                with smart_autocast(p.device.type, enabled=autocast):
                     return self.model(ims.to(p.device).type_as(p), augment=augment)  # inference
 
             # Pre-process
@@ -756,7 +755,7 @@ class AutoShape(nn.Module):
             x = np.ascontiguousarray(np.array(x).transpose((0, 3, 1, 2)))  # stack and BHWC to BCHW
             x = torch.from_numpy(x).to(p.device).type_as(p) / 255  # uint8 to fp16/32
 
-        with amp.autocast(autocast):
+        with smart_autocast(p.device.type, enabled=autocast):
             # Inference
             with dt[1]:
                 y = self.model(x, augment=augment)  # forward

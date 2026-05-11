@@ -38,7 +38,7 @@ from models.common import DetectMultiBackend
 from utils.dataloaders import create_classification_dataloader
 from utils.general import (LOGGER, TQDM_BAR_FORMAT, Profile, check_img_size, check_requirements, colorstr,
                            increment_path, print_args)
-from utils.torch_utils import select_device, smart_inference_mode
+from utils.torch_utils import select_device, smart_autocast, smart_inference_mode
 
 
 @smart_inference_mode()
@@ -102,7 +102,7 @@ def run(
     action = 'validating' if dataloader.dataset.root.stem == 'val' else 'testing'
     desc = f"{pbar.desc[:-36]}{action:>36}" if pbar else f"{action}"
     bar = tqdm(dataloader, desc, n, not training, bar_format=TQDM_BAR_FORMAT, position=0)
-    with torch.cuda.amp.autocast(enabled=device.type != 'cpu'):
+    with smart_autocast(device.type, enabled=device.type != 'cpu'):
         for images, labels in bar:
             with dt[0]:
                 images, labels = images.to(device, non_blocking=True), labels.to(device)
