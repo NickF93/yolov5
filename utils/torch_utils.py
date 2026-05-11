@@ -56,6 +56,17 @@ def smart_grad_scaler(device_type='cuda', enabled=True):
     return torch.cuda.amp.GradScaler(enabled=enabled)
 
 
+def tensors_to_float32(x):
+    # Recursively cast tensor containers to FP32 for numerically sensitive code paths.
+    if isinstance(x, torch.Tensor):
+        return x.float()
+    if isinstance(x, list):
+        return [tensors_to_float32(v) for v in x]
+    if isinstance(x, tuple):
+        return tuple(tensors_to_float32(v) for v in x)
+    return x
+
+
 def smart_inference_mode(torch_1_9=check_version(torch.__version__, '1.9.0')):
     # Applies torch.inference_mode() decorator if torch>=1.9.0 else torch.no_grad() decorator
     def decorate(fn):

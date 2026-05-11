@@ -43,7 +43,7 @@ from utils.general import (LOGGER, TQDM_BAR_FORMAT, Profile, check_dataset, chec
                            print_args, scale_boxes, xywh2xyxy, xyxy2xywh)
 from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
-from utils.torch_utils import select_device, smart_inference_mode
+from utils.torch_utils import select_device, smart_inference_mode, tensors_to_float32
 
 
 def save_one_txt(predn, save_conf, shape, file):
@@ -210,7 +210,7 @@ def run(
 
         # Loss
         if compute_loss:
-            loss += compute_loss(train_out, targets)[1]  # box, obj, cls
+            loss += compute_loss(tensors_to_float32(train_out), targets)[1]  # box, obj, cls
 
         # NMS
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
